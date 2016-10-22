@@ -3,6 +3,7 @@
 import ConfigParser
 import logging
 import os
+import math
 import shutil
 import subprocess
 import sys
@@ -12,12 +13,11 @@ import uuid
 
 
 def sizeof_fmt(num, suffix='B'):
-
-  for unit in ['','K','M','G','T','P','E','Z']:
-    if abs(num) < 1024.0:
-      return "%3.1f%s%s" % (num, unit, suffix)
-    num /= 1024.0
-  return "%.1f%s%s" % (num, 'Y', suffix)
+  units = ['','K','M','G','T','P','E','Z', 'Y']
+  unit_index = min(int(math.log(max(num, 1), 1024)), 8)
+  unit = units[unit_index]
+  num /= float(1024 ** unit_index)
+  return "%3.1f%s%s" % (num, unit, suffix)
 
 
 # Clean up after ourselves and exit.
@@ -35,6 +35,7 @@ def cleanup_and_exit(temp_dir, keep_temp=False):
   # Exit cleanly.
   logging.info('Done processing!')
   sys.exit(0)
+
 
 def main():
     # Config stuff.
