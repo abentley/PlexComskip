@@ -10,6 +10,32 @@ import tempfile
 import time
 import uuid
 
+
+def sizeof_fmt(num, suffix='B'):
+
+  for unit in ['','K','M','G','T','P','E','Z']:
+    if abs(num) < 1024.0:
+      return "%3.1f%s%s" % (num, unit, suffix)
+    num /= 1024.0
+  return "%.1f%s%s" % (num, 'Y', suffix)
+
+
+# Clean up after ourselves and exit.
+def cleanup_and_exit(temp_dir, keep_temp=False):
+  if keep_temp:
+    logging.info('Leaving temp files in: %s' % temp_dir)
+  else:
+    try:
+      os.chdir(os.path.expanduser('~'))  # Get out of the temp dir before we nuke it (causes issues on NTFS)
+      shutil.rmtree(temp_dir)
+    except Exception, e:
+      logging.error('Problem whacking temp dir: %s' % temp_dir)
+      logging.error(str(e))
+
+  # Exit cleanly.
+  logging.info('Done processing!')
+  sys.exit(0)
+
 def main():
     # Config stuff.
     config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'PlexComskip.conf')
@@ -46,33 +72,10 @@ def main():
       logging.getLogger('').addHandler(console)
 
     # Human-readable bytes.
-    def sizeof_fmt(num, suffix='B'):
-
-      for unit in ['','K','M','G','T','P','E','Z']:
-        if abs(num) < 1024.0:
-          return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-      return "%.1f%s%s" % (num, 'Y', suffix)
-
     if len(sys.argv) < 2:
       print 'Usage: PlexComskip.py input-file.mkv'
       sys.exit(1)
 
-    # Clean up after ourselves and exit.
-    def cleanup_and_exit(temp_dir, keep_temp=False):
-      if keep_temp:
-        logging.info('Leaving temp files in: %s' % temp_dir)
-      else:
-        try:
-          os.chdir(os.path.expanduser('~'))  # Get out of the temp dir before we nuke it (causes issues on NTFS)
-          shutil.rmtree(temp_dir)
-        except Exception, e:
-          logging.error('Problem whacking temp dir: %s' % temp_dir)
-          logging.error(str(e))
-
-      # Exit cleanly.
-      logging.info('Done processing!')
-      sys.exit(0)
 
     # If we're in a git repo, let's see if we can report our sha.
     logging.info('PlexComskip got invoked from %s' % os.path.realpath(__file__))
