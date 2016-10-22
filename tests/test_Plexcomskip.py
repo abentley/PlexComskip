@@ -38,22 +38,28 @@ def temp_dir():
                 raise
 
 
+@contextlib.contextmanager
+def check_cleanup(test_case, work_dir, keep):
+    test_case.assertIs(os.path.isdir(work_dir), True)
+    os.chdir(work_dir)
+    with test_case.assertRaises(SystemExit):
+        yield
+    if keep:
+        test_case.assertEqual(os.getcwd(), work_dir)
+        test_case.assertIs(os.path.isdir(work_dir), True)
+    else:
+        test_case.assertNotEqual(os.getcwd(), work_dir)
+        test_case.assertIs(os.path.exists(work_dir), False)
+
+
 class TestCleanupAndExit(TestCase):
 
     def test_no_keep(self):
         with temp_dir() as work_dir:
-            self.assertIs(os.path.isdir(work_dir), True)
-            os.chdir(work_dir)
-            with self.assertRaises(SystemExit):
+            with check_cleanup(self, work_dir, keep=False):
                 PlexComskip.cleanup_and_exit(work_dir, keep_temp=False)
-            self.assertNotEqual(os.getcwd(), work_dir)
-            self.assertIs(os.path.exists(work_dir), False)
 
     def test_keep(self):
         with temp_dir() as work_dir:
-            self.assertIs(os.path.isdir(work_dir), True)
-            os.chdir(work_dir)
-            with self.assertRaises(SystemExit):
+            with check_cleanup(self, work_dir, keep=True):
                 PlexComskip.cleanup_and_exit(work_dir, keep_temp=True)
-            self.assertIs(os.path.isdir(work_dir), True)
-            self.assertEqual(os.getcwd(), work_dir)
