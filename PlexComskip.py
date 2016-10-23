@@ -60,8 +60,9 @@ def work_dir(temp_root, session_uuid, save_always, save_forensics):
         cleanup_and_exit(temp_dir, keep_temp=keep)
         
 
-
 def main():
+    global COPY_ORIGINAL, SAVE_ALWAYS, NICE_ARGS, COMSKIP_PATH
+    global COMSKIP_INI_PATH, FFMPEG_PATH
     # Config stuff.
     config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'PlexComskip.conf')
     if not os.path.exists(config_file_path):
@@ -122,10 +123,14 @@ def main():
         logging.error('Couldn\'t set nice level to %s: %s' % (NICE_LEVEL, e))
 
     # On to the actual work.
+    with work_dir(TEMP_ROOT, session_uuid, SAVE_ALWAYS,
+                  SAVE_FORENSICS) as temp_dir:
+      do_work(session_uuid, temp_dir)
+
+
+def do_work(session_uuid, temp_dir):
     try:
-      video_path = sys.argv[1]
-      temp_dir = os.path.join(TEMP_ROOT, session_uuid)
-      os.makedirs(temp_dir)
+      video_path = os.path.abspath(sys.argv[1])
       os.chdir(temp_dir)
 
       logging.info('Using session ID: %s' % session_uuid)
@@ -139,7 +144,7 @@ def main():
 
     except Exception, e:
       logging.error('Something went wrong setting up temp paths and working files: %s' % e)
-      sys.exit(0)
+      raise
 
     try:
       if COPY_ORIGINAL or SAVE_ALWAYS: 
@@ -156,7 +161,7 @@ def main():
 
     except Exception, e:
       logging.error('Something went wrong during comskip analysis: %s' % e)
-      cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+      raise
 
     edl_file = os.path.join(temp_dir, video_name + '.edl')
     logging.info('Using EDL: ' + edl_file)
@@ -200,7 +205,7 @@ def main():
             subprocess.call(cmd)
           except Exception, e:
             logging.error('Exception running ffmpeg: %s' % e)
-            cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+            raise
           
           # If the last drop segment ended at the end of the file, we will have written a zero-duration file.
           if os.path.exists(segment_file_name):
@@ -213,7 +218,7 @@ def main():
 
     except Exception, e:
       logging.error('Something went wrong during splitting: %s' % e)
-      cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+      raise
 
     logging.info('Going to concatenate %s files from the segment list.' % len(segment_files))
     try:
@@ -223,7 +228,7 @@ def main():
 
     except Exception, e:
       logging.error('Something went wrong during concatenation: %s' % e)
-      cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+      raise
 
     logging.info('Sanity checking our work...')
     try:
@@ -231,18 +236,18 @@ def main():
       output_size = os.path.getsize(os.path.join(temp_dir, video_basename))
       if input_size and 1.01 > float(output_size) / float(input_size) > 0.99:
         logging.info('Output file size was too similar (doesn\'t look like we did much); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
-        cleanup_and_exit(temp_dir, SAVE_ALWAYS)
+        return
       elif input_size and 1.1 > float(output_size) / float(input_size) > 0.5:
         logging.info('Output file size looked sane, we\'ll replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
         logging.info('Copying the output file into place: %s -> %s' % (video_basename, original_video_dir))
         shutil.copy(os.path.join(temp_dir, video_basename), original_video_dir)
-        cleanup_and_exit(temp_dir, SAVE_ALWAYS)
+        return
       else:
         logging.info('Output file size looked wonky (too big or too small); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
-        cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+        raise Exception('Wonky size')
     except Exception, e:
       logging.error('Something went wrong during sanity check: %s' % e)
-      cleanup_and_exit(temp_dir, SAVE_ALWAYS or SAVE_FORENSICS)
+      raise
 
 if __name__ == '__main__':
     main()
