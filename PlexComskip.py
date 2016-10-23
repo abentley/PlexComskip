@@ -128,6 +128,27 @@ def main():
       do_work(session_uuid, temp_dir)
 
 
+def make_segment_file(temp_video_path, start, end, num):
+    """Make a segment file and return its filename."""
+    video_ext = os.path.splitext(temp_video_path)[1]
+    segment_name = 'segment-%s' % num
+    segment_file_name = '%s%s' % (segment_name, video_ext)
+    if end == -1:
+        duration_args = []
+    else:
+        duration_args = ['-t', str(end - start)]
+    cmd = NICE_ARGS + [FFMPEG_PATH, '-i', temp_video_path, '-ss', str(start)]
+    cmd.extend(duration_args)
+    cmd.extend(['-c', 'copy', segment_file_name])
+    logging.info('[ffmpeg] Command: %s' % cmd)
+    try:
+        subprocess.call(cmd)
+    except Exception, e:
+        logging.error('Exception running ffmpeg: %s' % e)
+        raise
+    return segment_file_name
+
+
 def do_work(session_uuid, temp_dir):
     try:
       video_path = os.path.abspath(sys.argv[1])
@@ -191,23 +212,10 @@ def do_work(session_uuid, temp_dir):
       segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
       with open(segment_list_file_path, 'wb') as segment_list_file:
         for i, segment in enumerate(segments):
-          segment_name = 'segment-%s' % i
-          segment_file_name = '%s%s' % (segment_name, video_ext)
-          if segment[1] == -1:
-            duration_args = []
-          else:
-            duration_args = ['-t', str(segment[1] - segment[0])]
-          cmd = NICE_ARGS + [FFMPEG_PATH, '-i', temp_video_path, '-ss', str(segment[0])]
-          cmd.extend(duration_args)
-          cmd.extend(['-c', 'copy', segment_file_name])
-          logging.info('[ffmpeg] Command: %s' % cmd)
-          try:
-            subprocess.call(cmd)
-          except Exception, e:
-            logging.error('Exception running ffmpeg: %s' % e)
-            raise
-          
-          # If the last drop segment ended at the end of the file, we will have written a zero-duration file.
+          segment_file_name = make_segment_file(temp_video_path, segment[0],
+                                                segment[1], i)
+          # If the last drop segment ended at the end of the file, we will have
+          # written a zero-duration file.
           if os.path.exists(segment_file_name):
             if os.path.getsize(segment_file_name) < 1000:
               logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
