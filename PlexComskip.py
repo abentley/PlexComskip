@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import ConfigParser
+import contextlib
 import logging
 import os
 import math
@@ -35,6 +36,29 @@ def cleanup_and_exit(temp_dir, keep_temp=False):
   # Exit cleanly.
   logging.info('Done processing!')
   sys.exit(0)
+
+
+@contextlib.contextmanager
+def work_dir(temp_root, session_uuid, save_always, save_forensics):
+    """Provide a work directory.
+
+    The supplied temp root and session uuid are used to create the directory.
+
+    If save_always is True, the results will be kept.  If save_forensics is
+    True and there is an exception, the results will be kept.  Otherwise, they
+    will be deleted.
+    """
+    temp_dir = os.path.join(temp_root, session_uuid)
+    os.makedirs(temp_dir)
+    keep = save_always
+    try:
+        yield temp_dir
+    except:
+        keep = keep or save_forensics
+        raise
+    finally:
+        cleanup_and_exit(temp_dir, keep_temp=keep)
+        
 
 
 def main():
