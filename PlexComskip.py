@@ -149,6 +149,41 @@ def make_segment_file(temp_video_path, start, end, num):
     return segment_file_name
 
 
+def list_segments(edl_file):
+    """Use the supplied EDL file to produce a segment list.
+
+    The segments returned are the segments to keep; this is the opposite of the
+    EDL, which lists segments to remove.
+
+    Because we don't know how long the file is from the EDL, the last segment
+    may be 0-length.
+    """
+    segments = []
+    prev_segment_end = 0.0
+    if os.path.exists(edl_file):
+	with open(edl_file, 'rb') as edl:
+	    # EDL contains segments we need to drop, so chain those together
+	    # into segments to keep.
+	    for segment in edl:
+		start, end, something = segment.split()
+		if float(start) == 0.0:
+		    logging.info('Start of file is junk, skipping this'
+                                 ' segment...')
+		else:
+		    keep_segment = [float(prev_segment_end), float(start)]
+		    logging.info('Keeping segment from %s to %s...'
+                                 % (keep_segment[0], keep_segment[1]))
+		    segments.append(keep_segment)
+		prev_segment_end = end
+
+    # Write the final keep segment from the end of the last commercial break to the end of the file.
+    keep_segment = [float(prev_segment_end), -1]
+    logging.info('Keeping segment from %s to the end of the file...' %
+                 prev_segment_end)
+    segments.append(keep_segment)
+    return segments
+
+
 def do_work(session_uuid, temp_dir):
     try:
       video_path = os.path.abspath(sys.argv[1])
@@ -187,27 +222,7 @@ def do_work(session_uuid, temp_dir):
     edl_file = os.path.join(temp_dir, video_name + '.edl')
     logging.info('Using EDL: ' + edl_file)
     try:
-      segments = []
-      prev_segment_end = 0.0
-      if os.path.exists(edl_file):
-        with open(edl_file, 'rb') as edl:
-          
-          # EDL contains segments we need to drop, so chain those together into segments to keep.
-          for segment in edl:
-            start, end, something = segment.split()
-            if float(start) == 0.0:
-              logging.info('Start of file is junk, skipping this segment...')
-            else:
-              keep_segment = [float(prev_segment_end), float(start)]
-              logging.info('Keeping segment from %s to %s...' % (keep_segment[0], keep_segment[1]))
-              segments.append(keep_segment)
-            prev_segment_end = end
-
-      # Write the final keep segment from the end of the last commercial break to the end of the file.
-      keep_segment = [float(prev_segment_end), -1]
-      logging.info('Keeping segment from %s to the end of the file...' % prev_segment_end)
-      segments.append(keep_segment)
-
+      segments = list_segments(edl_file)
       segment_files = []
       segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
       with open(segment_list_file_path, 'wb') as segment_list_file:
