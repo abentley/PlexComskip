@@ -215,20 +215,41 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
                          segment_list_file_path, '-c', 'copy', target_path]
       logging.info('[ffmpeg] Command: %s' % cmd)
       subprocess.call(cmd)
+      return target_path
 
     except Exception, e:
       logging.error('Something went wrong during concatenation: %s' % e)
       raise
 
 
-def detect_commercials(temp_dir, temp_video_path, video_name):
+def detect_commercials(temp_dir, temp_video_path, video_basename):
     """Use comskip to detect commercials.  Return path to edl."""
+    video_name, video_ext = os.path.splitext(video_basename)
     # Process with comskip.
     cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini',
                        COMSKIP_INI_PATH, temp_video_path]
     logging.info('[comskip] Command: %s' % cmd)
     subprocess.call(cmd)
     return os.path.join(temp_dir, video_name + '.edl')
+
+
+def replace_original(input_video, output_video):
+    logging.info('Sanity checking our work...')
+    try:
+      input_size = os.path.getsize(input_video)
+      output_size = os.path.getsize(output_video)
+      if input_size and 1.01 > float(output_size) / float(input_size) > 0.99:
+        logging.info('Output file size was too similar (doesn\'t look like we did much); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+        return False
+      elif input_size and 1.1 > float(output_size) / float(input_size) > 0.5:
+        logging.info('Output file size looked sane, we\'ll replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+        return True
+      else:
+        logging.info('Output file size looked wonky (too big or too small); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+        raise Exception('Wonky size')
+    except Exception, e:
+      logging.error('Something went wrong during sanity check: %s' % e)
+      raise
 
 
 def do_work(session_uuid, temp_dir):
@@ -243,7 +264,6 @@ def do_work(session_uuid, temp_dir):
 
       original_video_dir = os.path.dirname(video_path)
       video_basename = os.path.basename(video_path)
-      video_name, video_ext = os.path.splitext(video_basename)
 
     except Exception, e:
       logging.error('Something went wrong setting up temp paths and working files: %s' % e)
@@ -257,31 +277,19 @@ def do_work(session_uuid, temp_dir):
       else:
         temp_video_path = video_path
 
-      edl_file = detect_commercials(temp_dir, temp_video_path, video_name)
+      edl_file = detect_commercials(temp_dir, temp_video_path,
+                                    video_basename)
 
     except Exception, e:
       logging.error('Something went wrong during comskip analysis: %s' % e)
       raise
 
-    remove_commercials(temp_dir, temp_video_path, edl_file, video_basename)
-    logging.info('Sanity checking our work...')
-    try:
-      input_size = os.path.getsize(video_path)
-      output_size = os.path.getsize(os.path.join(temp_dir, video_basename))
-      if input_size and 1.01 > float(output_size) / float(input_size) > 0.99:
-        logging.info('Output file size was too similar (doesn\'t look like we did much); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
-        return
-      elif input_size and 1.1 > float(output_size) / float(input_size) > 0.5:
-        logging.info('Output file size looked sane, we\'ll replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+    output_video = remove_commercials(temp_dir, temp_video_path, edl_file,
+                                      video_basename)
+    if replace_original(video_path, output_video):
         logging.info('Copying the output file into place: %s -> %s' % (video_basename, original_video_dir))
         shutil.copy(os.path.join(temp_dir, video_basename), original_video_dir)
-        return
-      else:
-        logging.info('Output file size looked wonky (too big or too small); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
-        raise Exception('Wonky size')
-    except Exception, e:
-      logging.error('Something went wrong during sanity check: %s' % e)
-      raise
+
 
 if __name__ == '__main__':
     main()
