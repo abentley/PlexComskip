@@ -184,6 +184,53 @@ def list_segments(edl_file):
     return segments
 
 
+def remove_commercials(temp_dir, input_video, edl_file, video_basename):
+    logging.info('Using EDL: ' + edl_file)
+    try:
+      segments = list_segments(edl_file)
+      segment_files = []
+      segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
+      with open(segment_list_file_path, 'wb') as segment_list_file:
+        for i, segment in enumerate(segments):
+          segment_file_name = make_segment_file(input_video, segment[0],
+                                                segment[1], i)
+          # If the last drop segment ended at the end of the file, we will have
+          # written a zero-duration file.
+          if os.path.exists(segment_file_name):
+            if os.path.getsize(segment_file_name) < 1000:
+              logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
+              continue
+
+            segment_files.append(segment_file_name)
+            segment_list_file.write('file %s\n' % segment_file_name)
+
+    except Exception, e:
+      logging.error('Something went wrong during splitting: %s' % e)
+      raise
+
+    logging.info('Going to concatenate %s files from the segment list.' % len(segment_files))
+    try:
+      target_path = os.path.join(temp_dir, video_basename)
+      cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i',
+                         segment_list_file_path, '-c', 'copy', target_path]
+      logging.info('[ffmpeg] Command: %s' % cmd)
+      subprocess.call(cmd)
+
+    except Exception, e:
+      logging.error('Something went wrong during concatenation: %s' % e)
+      raise
+
+
+def detect_commercials(temp_dir, temp_video_path, video_name):
+    """Use comskip to detect commercials.  Return path to edl."""
+    # Process with comskip.
+    cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini',
+                       COMSKIP_INI_PATH, temp_video_path]
+    logging.info('[comskip] Command: %s' % cmd)
+    subprocess.call(cmd)
+    return os.path.join(temp_dir, video_name + '.edl')
+
+
 def do_work(session_uuid, temp_dir):
     try:
       video_path = os.path.abspath(sys.argv[1])
@@ -210,49 +257,13 @@ def do_work(session_uuid, temp_dir):
       else:
         temp_video_path = video_path
 
-      # Process with comskip.
-      cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini', COMSKIP_INI_PATH, temp_video_path]
-      logging.info('[comskip] Command: %s' % cmd)
-      subprocess.call(cmd)
+      edl_file = detect_commercials(temp_dir, temp_video_path, video_name)
 
     except Exception, e:
       logging.error('Something went wrong during comskip analysis: %s' % e)
       raise
 
-    edl_file = os.path.join(temp_dir, video_name + '.edl')
-    logging.info('Using EDL: ' + edl_file)
-    try:
-      segments = list_segments(edl_file)
-      segment_files = []
-      segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
-      with open(segment_list_file_path, 'wb') as segment_list_file:
-        for i, segment in enumerate(segments):
-          segment_file_name = make_segment_file(temp_video_path, segment[0],
-                                                segment[1], i)
-          # If the last drop segment ended at the end of the file, we will have
-          # written a zero-duration file.
-          if os.path.exists(segment_file_name):
-            if os.path.getsize(segment_file_name) < 1000:
-              logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
-              continue
-
-            segment_files.append(segment_file_name)
-            segment_list_file.write('file %s\n' % segment_file_name)
-
-    except Exception, e:
-      logging.error('Something went wrong during splitting: %s' % e)
-      raise
-
-    logging.info('Going to concatenate %s files from the segment list.' % len(segment_files))
-    try:
-      cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i', segment_list_file_path, '-c', 'copy', os.path.join(temp_dir, video_basename)]
-      logging.info('[ffmpeg] Command: %s' % cmd)
-      subprocess.call(cmd)
-
-    except Exception, e:
-      logging.error('Something went wrong during concatenation: %s' % e)
-      raise
-
+    remove_commercials(temp_dir, temp_video_path, edl_file, video_basename)
     logging.info('Sanity checking our work...')
     try:
       input_size = os.path.getsize(video_path)
