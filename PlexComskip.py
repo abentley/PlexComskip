@@ -186,6 +186,7 @@ def list_segments(edl_file):
 
 def remove_commercials(temp_dir, input_video, edl_file, video_basename):
     logging.info('Using EDL: ' + edl_file)
+    target_path = os.path.join(temp_dir, video_basename)
     try:
       segments = list_segments(edl_file)
       segment_files = []
@@ -210,7 +211,6 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
 
     logging.info('Going to concatenate %s files from the segment list.' % len(segment_files))
     try:
-      target_path = os.path.join(temp_dir, video_basename)
       cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i',
                          segment_list_file_path, '-c', 'copy', target_path]
       logging.info('[ffmpeg] Command: %s' % cmd)
@@ -225,12 +225,13 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
 def detect_commercials(temp_dir, temp_video_path, video_basename):
     """Use comskip to detect commercials.  Return path to edl."""
     video_name, video_ext = os.path.splitext(video_basename)
+    edl_file = os.path.join(temp_dir, video_name + '.edl')
     # Process with comskip.
     cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini',
                        COMSKIP_INI_PATH, temp_video_path]
     logging.info('[comskip] Command: %s' % cmd)
     subprocess.call(cmd)
-    return os.path.join(temp_dir, video_name + '.edl')
+    return edl_file
 
 
 def replace_original(input_video, output_video):
@@ -273,7 +274,7 @@ def do_work(session_uuid, temp_dir):
       if COPY_ORIGINAL or SAVE_ALWAYS: 
         temp_video_path = os.path.join(temp_dir, video_basename)
         logging.info('Copying file to work on it: %s' % temp_video_path)
-        shutil.copy(video_path, temp_dir)
+        shutil.move(video_path, temp_dir)
       else:
         temp_video_path = video_path
 
@@ -287,8 +288,12 @@ def do_work(session_uuid, temp_dir):
     output_video = remove_commercials(temp_dir, temp_video_path, edl_file,
                                       video_basename)
     if replace_original(video_path, output_video):
-        logging.info('Copying the output file into place: %s -> %s' % (video_basename, original_video_dir))
-        shutil.copy(os.path.join(temp_dir, video_basename), original_video_dir)
+        try:
+            logging.info('Copying the output file into place: %s -> %s' % (video_basename, original_video_dir))
+            shutil.copy(os.path.join(temp_dir, video_basename), original_video_dir)
+        except Exception as e:
+            print e
+            raise
 
 
 if __name__ == '__main__':
