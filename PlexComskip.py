@@ -157,6 +157,35 @@ def make_segment_file(temp_video_path, start, end, num):
     return Path(segment_file_name)
 
 
+def parse_edl(edl_lines):
+    for line in edl_lines:
+        data = line.split()
+        start = float(data[0])
+        end = float(data[1])
+        action = Action(data[2])
+        yield (start, end, action)
+
+
+def edl_to_segments(edl_segments):
+    segments = []
+    zipped = zip(edl_segments, [(0.0, 0.0, Action.SKIP)] + edl_segments)
+    for (start, end, action), (_, pend, _) in zipped:
+        if start == 0.0:
+            logging.info('Start of file is junk, skipping this'
+                                 ' segment...')
+            continue
+        keep_segment = [pend, start]
+        logging.info('Keeping segment from %s to %s...'
+                             % (keep_segment[0], keep_segment[1]))
+        yield keep_segment
+
+    # Write the final keep segment from the end of the last commercial break to the end of the file.
+    keep_segment = [float(end), -1]
+    logging.info('Keeping segment from %s to the end of the file...' %
+                 pend)
+    yield keep_segment
+
+
 def list_segments(edl_file):
     """Use the supplied EDL file to produce a segment list.
 
@@ -166,35 +195,11 @@ def list_segments(edl_file):
     Because we don't know how long the file is from the EDL, the last segment
     may be 0-length.
     """
-    segments = []
-    if os.path.exists(edl_file):
-        with open(edl_file, 'rb') as edl:
-            # EDL contains segments we need to drop, so chain those together
-            # into segments to keep.
-            edl_segments = []
-            for line in edl:
-                data = line.split()
-                start = float(data[0])
-                end = float(data[1])
-                action = Action(data[2])
-                edl_segments.append((start, end, action))
-        zipped = zip(edl_segments, [(0.0, 0.0, Action.SKIP)] + edl_segments)
-        for (start, end, action), (_, pend, _) in zipped:
-            if start == 0.0:
-                logging.info('Start of file is junk, skipping this'
-                                     ' segment...')
-                continue
-            keep_segment = [pend, start]
-            logging.info('Keeping segment from %s to %s...'
-                                 % (keep_segment[0], keep_segment[1]))
-            segments.append(keep_segment)
-
-    # Write the final keep segment from the end of the last commercial break to the end of the file.
-    keep_segment = [float(end), -1]
-    logging.info('Keeping segment from %s to the end of the file...' %
-                 pend)
-    segments.append(keep_segment)
-    return segments
+    with edl_file.open('rb') as edl:
+        # EDL contains segments we need to drop, so chain those together
+        # into segments to keep.
+        edl_segments = list(parse_edl(edl))
+    return list(edl_to_segments(edl_segments))
 
 
 def write_segments(input_video, temp_dir, segments):
@@ -251,7 +256,7 @@ def detect_commercials(temp_dir, temp_video_path, video_basename):
                        COMSKIP_INI_PATH, temp_video_path]
     logging.info('[comskip] Command: %s' % cmd)
     subprocess.call(cmd)
-    return edl_file
+    return Path(edl_file)
 
 
 def replace_original(input_video, output_video):

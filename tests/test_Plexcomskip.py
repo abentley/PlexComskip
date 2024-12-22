@@ -1,11 +1,17 @@
 import contextlib
+from io import BytesIO
 import errno
 import os
+from pathlib import Path
 import shutil
 import tempfile
 from unittest import TestCase
+from unittest.mock import Mock
 
-from PlexComskip import sizeof_fmt
+from PlexComskip import (
+    Action,
+    sizeof_fmt,
+)
 import PlexComskip
 
 
@@ -119,20 +125,66 @@ class TestWorkDir(TestCase):
             raise ValueError('foo')
 
 
+EG_EDL = b"""\
+510.28	738.74	0
+1348.81	1569.70	0
+2072.24	2284.25	0
+2644.64	2876.21	0
+3257.89	3487.92	0
+3992.09	4220.68	0
+4725.95	4953.15	0
+5260.72	5508.74	0
+5796.59	6028.66	0
+6374.28	6809.52	0
+7189.32	7198.22	0
+"""
+
+EG_PARSED_EDL = [
+    (510.28, 738.74, Action.SKIP),
+    (1348.81, 1569.70, Action.SKIP),
+    (2072.24, 2284.25, Action.SKIP),
+    (2644.64, 2876.21, Action.SKIP),
+    (3257.89, 3487.92, Action.SKIP),
+    (3992.09, 4220.68, Action.SKIP),
+    (4725.95, 4953.15, Action.SKIP),
+    (5260.72, 5508.74, Action.SKIP),
+    (5796.59, 6028.66, Action.SKIP),
+    (6374.28, 6809.52, Action.SKIP),
+    (7189.32, 7198.22, Action.SKIP),
+]
+
+
+class TestParseEDL(TestCase):
+
+    def test_parse_edl(self):
+        edl = list(PlexComskip.parse_edl(EG_EDL.splitlines()))
+        self.assertEqual(EG_PARSED_EDL, edl)
+
+EG_SEGMENTS = [
+    [0.0, 510.28],
+    [738.74, 1348.81],
+    [1569.7, 2072.24],
+    [2284.25, 2644.64],
+    [2876.21, 3257.89],
+    [3487.92, 3992.09],
+    [4220.68, 4725.95],
+    [4953.15, 5260.72],
+    [5508.74, 5796.59],
+    [6028.66, 6374.28],
+    [6809.52, 7189.32],
+    [7198.22, -1],
+]
+
 class TestListSegments(TestCase):
 
     def test_list_segments(self):
-        segments = PlexComskip.list_segments('/home/abentley/PlexComskip/tests/eg.edl')
-        self.assertEqual(
-            [[0.0, 510.28],
-             [738.74, 1348.81],
-             [1569.7, 2072.24],
-             [2284.25, 2644.64],
-             [2876.21, 3257.89],
-             [3487.92, 3992.09],
-             [4220.68, 4725.95],
-             [4953.15, 5260.72],
-             [5508.74, 5796.59],
-             [6028.66, 6374.28],
-             [6809.52, 7189.32],
-             [7198.22, -1]], segments)
+        mock_path = Mock()
+        mock_path.open.return_value = BytesIO(EG_EDL)
+        segments = PlexComskip.list_segments(mock_path)
+        self.assertEqual(EG_SEGMENTS, segments)
+
+
+class TestEDLToSegments(TestCase):
+
+    def test_edl_to_segments(self):
+        self.assertEqual(list(PlexComskip.edl_to_segments(EG_PARSED_EDL)), EG_SEGMENTS)
