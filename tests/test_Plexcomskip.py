@@ -117,3 +117,22 @@ class TestWorkDir(TestCase):
     def test_error_keep_always_forensics(self):
         with self.wd_cxt(keep=True, save_always=True, save_forensics=True):
             raise ValueError('foo')
+
+
+class TestListSegments(TestCase):
+
+    def test_list_segments(self):
+        segments = PlexComskip.list_segments('/home/abentley/PlexComskip/tests/eg.edl')
+        self.assertEqual(
+            [[0.0, 510.28],
+             [738.74, 1348.81],
+             [1569.7, 2072.24],
+             [2284.25, 2644.64],
+             [2876.21, 3257.89],
+             [3487.92, 3992.09],
+             [4220.68, 4725.95],
+             [4953.15, 5260.72],
+             [5508.74, 5796.59],
+             [6028.66, 6374.28],
+             [6809.52, 7189.32],
+             [7198.22, -1]], segments)

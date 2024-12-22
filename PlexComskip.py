@@ -1,9 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
-import ConfigParser
+import configparser
 import contextlib
+from enum import Enum
 import logging
 import os
+from pathlib import Path
 import math
 import shutil
 import subprocess
@@ -11,6 +13,12 @@ import sys
 import tempfile
 import time
 import uuid
+
+class Action(Enum):
+
+    SKIP = b'0'
+
+    MUTE = b'1'
 
 
 def sizeof_fmt(num, suffix='B'):
@@ -29,7 +37,7 @@ def cleanup_and_exit(temp_dir, keep_temp=False):
     try:
       os.chdir(os.path.expanduser('~'))  # Get out of the temp dir before we nuke it (causes issues on NTFS)
       shutil.rmtree(temp_dir)
-    except Exception, e:
+    except Exception as e:
       logging.error('Problem whacking temp dir: %s' % temp_dir)
       logging.error(str(e))
 
@@ -53,7 +61,7 @@ def work_dir(temp_root, session_uuid, save_always, save_forensics):
     keep = save_always
     try:
         yield temp_dir
-    except:
+    except BaseException:
         keep = keep or save_forensics
         raise
     finally:
@@ -66,11 +74,11 @@ def main():
     # Config stuff.
     config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'PlexComskip.conf')
     if not os.path.exists(config_file_path):
-      print 'Config file not found: %s' % config_file_path
-      print 'Make a copy of PlexConfig.conf.example named PlexConfig.conf, modify as necessary, and place in the same directory as this script.'
+      print('Config file not found: %s' % config_file_path)
+      print('Make a copy of PlexConfig.conf.example named PlexConfig.conf, modify as necessary, and place in the same directory as this script.')
       sys.exit(1)
 
-    config = ConfigParser.SafeConfigParser({'comskip-ini-path' : os.path.join(os.path.dirname(os.path.realpath(__file__)), 'comskip.ini'), 'temp-root' : tempfile.gettempdir(), 'nice-level' : '0'})
+    config = configparser.ConfigParser({'comskip-ini-path' : os.path.join(os.path.dirname(os.path.realpath(__file__)), 'comskip.ini'), 'temp-root' : tempfile.gettempdir(), 'nice-level' : '0'})
     config.read(config_file_path)
 
     COMSKIP_PATH = os.path.expandvars(os.path.expanduser(config.get('Helper Apps', 'comskip-path')))
@@ -99,7 +107,7 @@ def main():
 
     # Human-readable bytes.
     if len(sys.argv) < 2:
-      print 'Usage: PlexComskip.py input-file.mkv'
+      print('Usage: PlexComskip.py input-file.mkv')
       sys.exit(1)
 
 
@@ -109,7 +117,7 @@ def main():
       git_sha = subprocess.check_output('git rev-parse --short HEAD', shell=True)
       if git_sha:
         logging.info('Using version: %s' % git_sha.strip())
-    except: pass
+    except BaseException: pass
 
     # Set our own nice level and tee up some args for subprocesses (unix-like OSes only).
     NICE_ARGS = []
@@ -119,7 +127,7 @@ def main():
         if nice_int > 0:
           os.nice(nice_int)
           NICE_ARGS = ['nice', '-n', str(nice_int)]
-      except Exception, e:
+      except Exception as e:
         logging.error('Couldn\'t set nice level to %s: %s' % (NICE_LEVEL, e))
 
     # On to the actual work.
@@ -143,10 +151,10 @@ def make_segment_file(temp_video_path, start, end, num):
     logging.info('[ffmpeg] Command: %s' % cmd)
     try:
         subprocess.call(cmd)
-    except Exception, e:
+    except Exception as e:
         logging.error('Exception running ffmpeg: %s' % e)
         raise
-    return segment_file_name
+    return Path(segment_file_name)
 
 
 def list_segments(edl_file):
@@ -159,53 +167,65 @@ def list_segments(edl_file):
     may be 0-length.
     """
     segments = []
-    prev_segment_end = 0.0
     if os.path.exists(edl_file):
-	with open(edl_file, 'rb') as edl:
-	    # EDL contains segments we need to drop, so chain those together
-	    # into segments to keep.
-	    for segment in edl:
-		start, end, something = segment.split()
-		if float(start) == 0.0:
-		    logging.info('Start of file is junk, skipping this'
-                                 ' segment...')
-		else:
-		    keep_segment = [float(prev_segment_end), float(start)]
-		    logging.info('Keeping segment from %s to %s...'
+        with open(edl_file, 'rb') as edl:
+            # EDL contains segments we need to drop, so chain those together
+            # into segments to keep.
+            edl_segments = []
+            for line in edl:
+                data = line.split()
+                start = float(data[0])
+                end = float(data[1])
+                action = Action(data[2])
+                edl_segments.append((start, end, action))
+        zipped = zip(edl_segments, [(0.0, 0.0, Action.SKIP)] + edl_segments)
+        for (start, end, action), (_, pend, _) in zipped:
+            if start == 0.0:
+                logging.info('Start of file is junk, skipping this'
+                                     ' segment...')
+                continue
+            keep_segment = [pend, start]
+            logging.info('Keeping segment from %s to %s...'
                                  % (keep_segment[0], keep_segment[1]))
-		    segments.append(keep_segment)
-		prev_segment_end = end
+            segments.append(keep_segment)
 
     # Write the final keep segment from the end of the last commercial break to the end of the file.
-    keep_segment = [float(prev_segment_end), -1]
+    keep_segment = [float(end), -1]
     logging.info('Keeping segment from %s to the end of the file...' %
-                 prev_segment_end)
+                 pend)
     segments.append(keep_segment)
     return segments
+
+
+def write_segments(input_video, temp_dir, segments):
+    for i, segment in enumerate(segments):
+        segment_file_name = make_segment_file(input_video, segment[0],
+                                              segment[1], i)
+        # If the last drop segment ended at the end of the file, we will have
+        # written a zero-duration file.
+        if os.path.exists(segment_file_name):
+            if os.path.getsize(segment_file_name) < 1000:
+                logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
+                continue
+            yield segment_file_name
+
+def write_segments_file(temp_dir, segment_files):
+    segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
+    with open(segment_list_file_path, 'wb') as segment_list_file:
+        for segment_file_name in segment_files:
+            segment_list_file.write(b'file %s\n' % segment_file_name)
+    return segment_list_file_path
 
 
 def remove_commercials(temp_dir, input_video, edl_file, video_basename):
     logging.info('Using EDL: ' + edl_file)
     target_path = os.path.join(temp_dir, video_basename)
     try:
-      segments = list_segments(edl_file)
-      segment_files = []
-      segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
-      with open(segment_list_file_path, 'wb') as segment_list_file:
-        for i, segment in enumerate(segments):
-          segment_file_name = make_segment_file(input_video, segment[0],
-                                                segment[1], i)
-          # If the last drop segment ended at the end of the file, we will have
-          # written a zero-duration file.
-          if os.path.exists(segment_file_name):
-            if os.path.getsize(segment_file_name) < 1000:
-              logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
-              continue
+        segments = list_segments(edl_file)
+        segment_files = list(write_segments(input_video, temp_dir, segments))
+        segment_list_file_path = write_segments_file(temp_dir, segment_files)
 
-            segment_files.append(segment_file_name)
-            segment_list_file.write('file %s\n' % segment_file_name)
-
-    except Exception, e:
+    except Exception as e:
       logging.error('Something went wrong during splitting: %s' % e)
       raise
 
@@ -217,7 +237,7 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
       subprocess.call(cmd)
       return target_path
 
-    except Exception, e:
+    except Exception as e:
       logging.error('Something went wrong during concatenation: %s' % e)
       raise
 
@@ -248,7 +268,7 @@ def replace_original(input_video, output_video):
       else:
         logging.info('Output file size looked wonky (too big or too small); we won\'t replace the original: %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size)))
         raise Exception('Wonky size')
-    except Exception, e:
+    except Exception as e:
       logging.error('Something went wrong during sanity check: %s' % e)
       raise
 
@@ -266,7 +286,7 @@ def do_work(session_uuid, temp_dir):
       original_video_dir = os.path.dirname(video_path)
       video_basename = os.path.basename(video_path)
 
-    except Exception, e:
+    except Exception as e:
       logging.error('Something went wrong setting up temp paths and working files: %s' % e)
       raise
 
@@ -281,7 +301,7 @@ def do_work(session_uuid, temp_dir):
       edl_file = detect_commercials(temp_dir, temp_video_path,
                                     video_basename)
 
-    except Exception, e:
+    except Exception as e:
       logging.error('Something went wrong during comskip analysis: %s' % e)
       raise
 
@@ -292,7 +312,7 @@ def do_work(session_uuid, temp_dir):
             logging.info('Copying the output file into place: %s -> %s' % (video_basename, original_video_dir))
             shutil.copy(os.path.join(temp_dir, video_basename), original_video_dir)
         except Exception as e:
-            print e
+            print(e)
             raise
 
 
