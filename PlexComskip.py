@@ -3,10 +3,12 @@
 import configparser
 import contextlib
 from enum import Enum
+from functools import partial
 import logging
 import os
 from pathlib import Path
 import math
+from multiprocessing import Pool
 import shutil
 import subprocess
 import sys
@@ -150,7 +152,7 @@ def make_segment_file(temp_video_path, start, end, num):
     cmd.extend(['-c', 'copy', segment_file_name])
     logging.info('[ffmpeg] Command: %s' % cmd)
     try:
-        subprocess.call(cmd)
+        subprocess.check_call(cmd)
     except Exception as e:
         logging.error('Exception running ffmpeg: %s' % e)
         raise
@@ -202,17 +204,24 @@ def list_segments(edl_file):
     return list(edl_to_segments(edl_segments))
 
 
+def write_segment_file(input_video, info):
+    i, segment = info
+    segment_file_name = make_segment_file(input_video, segment[0],
+                                          segment[1], i)
+    # If the last drop segment ended at the end of the file, we will have
+    # written a zero-duration file.
+    if os.path.exists(segment_file_name):
+        if os.path.getsize(segment_file_name) < 1000:
+            logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
+            return None
+    return segment_file_name
+
+
 def write_segments(input_video, temp_dir, segments):
-    for i, segment in enumerate(segments):
-        segment_file_name = make_segment_file(input_video, segment[0],
-                                              segment[1], i)
-        # If the last drop segment ended at the end of the file, we will have
-        # written a zero-duration file.
-        if os.path.exists(segment_file_name):
-            if os.path.getsize(segment_file_name) < 1000:
-                logging.info('Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
-                continue
-            yield segment_file_name
+    with Pool() as p:
+        segment_file_names = p.map(partial(write_segment_file, input_video), enumerate(segments))
+    return (f for f in segment_file_names if f is not None)
+
 
 def write_segments_file(temp_dir, segment_files):
     segment_list_file_path = os.path.join(temp_dir, 'segments.txt')
@@ -223,7 +232,7 @@ def write_segments_file(temp_dir, segment_files):
 
 
 def remove_commercials(temp_dir, input_video, edl_file, video_basename):
-    logging.info('Using EDL: ' + edl_file)
+    logging.info('Using EDL: %s', edl_file)
     target_path = os.path.join(temp_dir, video_basename)
     try:
         segments = list_segments(edl_file)
@@ -239,7 +248,7 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
       cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i',
                          segment_list_file_path, '-c', 'copy', target_path]
       logging.info('[ffmpeg] Command: %s' % cmd)
-      subprocess.call(cmd)
+      subprocess.check_call(cmd)
       return target_path
 
     except Exception as e:
@@ -255,7 +264,7 @@ def detect_commercials(temp_dir, temp_video_path, video_basename):
     cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini',
                        COMSKIP_INI_PATH, temp_video_path]
     logging.info('[comskip] Command: %s' % cmd)
-    subprocess.call(cmd)
+    subprocess.check_call(cmd)
     return Path(edl_file)
 
 
