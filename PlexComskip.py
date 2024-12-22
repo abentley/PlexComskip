@@ -10,6 +10,7 @@ from pathlib import Path
 import math
 from multiprocessing import Pool
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -204,8 +205,7 @@ def list_segments(edl_file):
     return list(edl_to_segments(edl_segments))
 
 
-def write_segment_file(input_video, info):
-    i, segment = info
+def write_segment_file(input_video, i, segment):
     segment_file_name = make_segment_file(input_video, segment[0],
                                           segment[1], i)
     # If the last drop segment ended at the end of the file, we will have
@@ -219,7 +219,7 @@ def write_segment_file(input_video, info):
 
 def write_segments(input_video, temp_dir, segments):
     with Pool() as p:
-        segment_file_names = p.map(partial(write_segment_file, input_video), enumerate(segments))
+        segment_file_names = p.starmap(partial(write_segment_file, input_video), enumerate(segments))
     return (f for f in segment_file_names if f is not None)
 
 
@@ -256,6 +256,20 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
       raise
 
 
+def call_and_retry(cmd, retries=2):
+    for num in range(retries):
+        if num != 0:
+            logging.info("Retry {} of {}".format(num, cmd))
+        try:
+            return subprocess.check_call(cmd)
+        except subprocess.CalledProcessError as e:
+            if e.returncode != -signal.SIGSEGV:
+                raise
+            if num == retries - 1:
+                logging.error("Giving up after {} attempts".format(retries))
+                raise
+
+
 def detect_commercials(temp_dir, temp_video_path, video_basename):
     """Use comskip to detect commercials.  Return path to edl."""
     video_name, video_ext = os.path.splitext(video_basename)
@@ -264,7 +278,7 @@ def detect_commercials(temp_dir, temp_video_path, video_basename):
     cmd = NICE_ARGS + [COMSKIP_PATH, '--output', temp_dir, '--ini',
                        COMSKIP_INI_PATH, temp_video_path]
     logging.info('[comskip] Command: %s' % cmd)
-    subprocess.check_call(cmd)
+    call_and_retry(cmd)
     return Path(edl_file)
 
 

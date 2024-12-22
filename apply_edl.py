@@ -9,6 +9,7 @@ import shutil
 import PlexComskip
 from PlexComskip import remove_commercials
 
+
 def main():
     nice_int = 20
     PlexComskip.NICE_ARGS = ['nice', '-n', str(nice_int)]
