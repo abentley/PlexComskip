@@ -160,6 +160,7 @@ class TestParseEDL(TestCase):
         edl = list(PlexComskip.parse_edl(EG_EDL.splitlines()))
         self.assertEqual(EG_PARSED_EDL, edl)
 
+
 EG_SEGMENTS = [
     [0.0, 510.28],
     [738.74, 1348.81],
@@ -188,3 +189,9 @@ class TestEDLToSegments(TestCase):
 
     def test_edl_to_segments(self):
         self.assertEqual(list(PlexComskip.edl_to_segments(EG_PARSED_EDL)), EG_SEGMENTS)
+
+    def test_zero_start(self):
+        self.assertEqual(list(PlexComskip.edl_to_segments([[0.0, 5.0, Action.SKIP]] + EG_PARSED_EDL)),
+                         [[5.0, 510.28]] + EG_SEGMENTS[1:])
+    def test_empty(self):
+        self.assertEqual(list(PlexComskip.edl_to_segments([])), [[0.0, -1]])

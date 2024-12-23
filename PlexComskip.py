@@ -4,6 +4,7 @@ import configparser
 import contextlib
 from enum import Enum
 from functools import partial
+from itertools import pairwise
 import logging
 import os
 from pathlib import Path
@@ -189,23 +190,28 @@ def parse_edl(edl_lines):
 
 
 def edl_to_segments(edl_segments):
-    zipped = zip(edl_segments, [(0.0, 0.0, Action.SKIP)] + edl_segments)
-    for (start, end, action), (_, pend, _) in zipped:
-        if start == 0.0:
-            logging.info('Start of file is junk, skipping this'
-                         ' segment...')
-            continue
-        keep_segment = [pend, start]
-        logging.info('Keeping segment from %s to %s...'
-                     % (keep_segment[0], keep_segment[1]))
-        yield keep_segment
+    """
+    Yields segments to keep based on the provided EDL segments.
 
-    # Write the final keep segment from the end of the last commercial break to
-    # the end of the file.
-    keep_segment = [float(end), -1]
-    logging.info('Keeping segment from %s to the end of the file...' %
-                 pend)
-    yield keep_segment
+    Args:
+        edl_segments: A list of tuples representing EDL segments
+                      (start_time, end_time, action).
+
+    Yields:
+        A list representing a segment to keep [start_time, end_time].
+    """
+    def maybe_yield(segment):
+        if segment[0] < segment[1]:
+            yield segment
+
+    next_end = 0.0  # Handle empty input
+    for num, ((start, end, _), (next_start, next_end, _)) in enumerate(
+        pairwise(edl_segments)
+    ):
+        if num == 0:
+            yield from maybe_yield([0.0, start])
+        yield from maybe_yield([end, next_start])
+    yield [next_end, -1]  # Yield the last segment to the end of the file
 
 
 def list_segments(edl_file):
