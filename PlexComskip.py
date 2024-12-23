@@ -14,7 +14,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 import uuid
 
 
@@ -81,11 +80,18 @@ def main():
         os.path.realpath(__file__)), 'PlexComskip.conf')
     if not os.path.exists(config_file_path):
         print('Config file not found: %s' % config_file_path)
-        print('Make a copy of PlexConfig.conf.example named PlexConfig.conf, modify as necessary, and place in the same directory as this script.')
+        print('Make a copy of PlexConfig.conf.example named PlexConfig.conf,'
+              ' modify as necessary, and place in the same directory as this'
+              ' script.')
         sys.exit(1)
 
-    config = configparser.ConfigParser({'comskip-ini-path': os.path.join(os.path.dirname(
-        os.path.realpath(__file__)), 'comskip.ini'), 'temp-root': tempfile.gettempdir(), 'nice-level': '0'})
+    config = configparser.ConfigParser({
+        'comskip-ini-path': os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            'comskip.ini'
+        ),
+        'temp-root': tempfile.gettempdir(), 'nice-level': '0'
+    })
     config.read(config_file_path)
 
     COMSKIP_PATH = os.path.expandvars(os.path.expanduser(
@@ -133,7 +139,8 @@ def main():
     except BaseException:
         pass
 
-    # Set our own nice level and tee up some args for subprocesses (unix-like OSes only).
+    # Set our own nice level and tee up some args for subprocesses (unix-like
+    # OSes only).
     NICE_ARGS = []
     if sys.platform != 'win32':
         try:
@@ -182,7 +189,6 @@ def parse_edl(edl_lines):
 
 
 def edl_to_segments(edl_segments):
-    segments = []
     zipped = zip(edl_segments, [(0.0, 0.0, Action.SKIP)] + edl_segments)
     for (start, end, action), (_, pend, _) in zipped:
         if start == 0.0:
@@ -194,7 +200,8 @@ def edl_to_segments(edl_segments):
                      % (keep_segment[0], keep_segment[1]))
         yield keep_segment
 
-    # Write the final keep segment from the end of the last commercial break to the end of the file.
+    # Write the final keep segment from the end of the last commercial break to
+    # the end of the file.
     keep_segment = [float(end), -1]
     logging.info('Keeping segment from %s to the end of the file...' %
                  pend)
@@ -222,11 +229,12 @@ def write_segment_file(input_video, i, segment):
                                           segment[1], i)
     # If the last drop segment ended at the end of the file, we will have
     # written a zero-duration file.
-    if os.path.exists(segment_file_name):
-        if os.path.getsize(segment_file_name) < 1000:
-            logging.info(
-                'Last segment ran to the end of the file, not adding bogus segment %s for concatenation.' % (i + 1))
-            return None
+    if os.path.getsize(segment_file_name) < 1000:
+        logging.info(
+            'Last segment ran to the end of the file, not adding bogus segment'
+            '%s for concatenation.' % (i + 1)
+        )
+        return None
     return segment_file_name
 
 
@@ -303,16 +311,24 @@ def replace_original(input_video, output_video):
         input_size = os.path.getsize(input_video)
         output_size = os.path.getsize(output_video)
         if input_size and 1.01 > float(output_size) / float(input_size) > 0.99:
-            logging.info('Output file size was too similar (doesn\'t look like we did much); we won\'t replace the original: %s -> %s' %
-                         (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+            logging.info(
+                'Output file size was too similar (doesn\'t look like we did'
+                ' much); we won\'t replace the original: %s -> %s'
+                % (sizeof_fmt(input_size), sizeof_fmt(output_size))
+            )
             return False
         elif input_size and 1.1 > float(output_size) / float(input_size) > 0.5:
-            logging.info('Output file size looked sane, we\'ll replace the original: %s -> %s' %
-                         (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+            logging.info(
+                'Output file size looked sane, we\'ll replace the original:'
+                ' %s -> %s' % (sizeof_fmt(input_size), sizeof_fmt(output_size))
+            )
             return True
         else:
-            logging.info('Output file size looked wonky (too big or too small); we won\'t replace the original: %s -> %s' %
-                         (sizeof_fmt(input_size), sizeof_fmt(output_size)))
+            logging.info(
+                'Output file size looked wonky (too big or too small); we'
+                ' won\'t replace the original: %s -> %s'
+                % (sizeof_fmt(input_size), sizeof_fmt(output_size))
+            )
             raise Exception('Wonky size')
     except Exception as e:
         logging.error('Something went wrong during sanity check: %s' % e)
@@ -333,7 +349,8 @@ def do_work(session_uuid, temp_dir):
 
     except Exception as e:
         logging.error(
-            'Something went wrong setting up temp paths and working files: %s' % e)
+            'Something went wrong setting up temp paths and working files: %s'
+            % e)
         raise
 
     try:
