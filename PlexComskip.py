@@ -231,7 +231,7 @@ def edl_to_segments(edl_segments):
                       (start_time, end_time, action).
 
     Yields:
-        A list representing a segment to keep [start_time, end_time].
+        A tuple representing a segment to keep (start_time, end_time).
     """
     def maybe_yield(segment):
         if segment[0] < segment[1]:
@@ -242,9 +242,9 @@ def edl_to_segments(edl_segments):
         pairwise(edl_segments)
     ):
         if num == 0:
-            yield from maybe_yield([0.0, start])
-        yield from maybe_yield([end, next_start])
-    yield [next_end, -1]  # Yield the last segment to the end of the file
+            yield from maybe_yield((0.0, start))
+        yield from maybe_yield((end, next_start))
+    yield (next_end, -1)  # Yield the last segment to the end of the file
 
 
 def list_segments(edl_file):
