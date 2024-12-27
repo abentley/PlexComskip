@@ -2,6 +2,7 @@
 
 import configparser
 import contextlib
+from collections import namedtuple
 from enum import Enum
 from functools import partial
 from itertools import pairwise
@@ -234,7 +235,7 @@ def edl_to_segments(edl_segments):
         A tuple representing a segment to keep (start_time, end_time).
     """
     def maybe_yield(segment):
-        if segment[0] < segment[1]:
+        if segment.start < segment.end:
             yield segment
 
     next_end = 0.0  # Handle empty input
@@ -242,9 +243,10 @@ def edl_to_segments(edl_segments):
         pairwise(edl_segments)
     ):
         if num == 0:
-            yield from maybe_yield((0.0, start))
-        yield from maybe_yield((end, next_start))
-    yield (next_end, -1)  # Yield the last segment to the end of the file
+            yield from maybe_yield(Segment(0.0, start))
+        yield from maybe_yield(Segment(end, next_start))
+    # Yield the last segment to the end of the file
+    yield Segment(next_end, -1)
 
 
 def list_segments(edl_file):
@@ -343,6 +345,7 @@ def remove_commercials(temp_dir, input_video, edl_file, video_basename):
     target_path = os.path.join(temp_dir, video_basename)
     try:
         segments = list_segments(edl_file)
+        segments = extend_end(segments)
         segment_files = list(write_segments(input_video, temp_dir, segments))
         segment_list_file_path = write_segments_file(temp_dir, segment_files)
 
@@ -447,6 +450,27 @@ def replace_original(input_video, output_video):
     except Exception as e:
         logging.error('Something went wrong during sanity check: %s' % e)
         raise
+
+
+Segment = namedtuple('Segment', ['start', 'end'])
+
+
+def extend_end(segments):
+    extended = [Segment(s.start, s.end + 5.0) if s.end > 0 else s for s in segments]
+    extended2 = []
+    cur = None
+    for segment in extended:
+        if cur is None:
+            cur = segment
+            continue
+        if cur.end < segment.start:
+            extended2.append(cur)
+            cur = segment
+        else:
+            cur = Segment(cur.start, segment.end)
+    if cur is not None:
+        extended2.append(cur)
+    return extended2
 
 
 def do_work(session_uuid, temp_dir):

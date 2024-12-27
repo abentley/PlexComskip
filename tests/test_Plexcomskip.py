@@ -2,7 +2,6 @@ import contextlib
 from io import BytesIO
 import errno
 import os
-from pathlib import Path
 import shutil
 import tempfile
 from unittest import TestCase
@@ -10,6 +9,8 @@ from unittest.mock import Mock
 
 from PlexComskip import (
     Action,
+    extend_end,
+    Segment,
     sizeof_fmt,
 )
 import PlexComskip
@@ -176,6 +177,7 @@ EG_SEGMENTS = [
     (7198.22, -1),
 ]
 
+
 class TestListSegments(TestCase):
 
     def test_list_segments(self):
@@ -188,10 +190,31 @@ class TestListSegments(TestCase):
 class TestEDLToSegments(TestCase):
 
     def test_edl_to_segments(self):
-        self.assertEqual(list(PlexComskip.edl_to_segments(EG_PARSED_EDL)), EG_SEGMENTS)
+        self.assertEqual(list(PlexComskip.edl_to_segments(EG_PARSED_EDL)),
+                         EG_SEGMENTS)
 
     def test_zero_start(self):
-        self.assertEqual(list(PlexComskip.edl_to_segments([[0.0, 5.0, Action.SKIP]] + EG_PARSED_EDL)),
-                         [(5.0, 510.28)] + EG_SEGMENTS[1:])
+        self.assertEqual(list(PlexComskip.edl_to_segments(
+            [[0.0, 5.0, Action.SKIP]] + EG_PARSED_EDL)),
+            [(5.0, 510.28)] + EG_SEGMENTS[1:])
+
     def test_empty(self):
         self.assertEqual(list(PlexComskip.edl_to_segments([])), [(0.0, -1)])
+
+
+class TestExtendEnd(TestCase):
+
+    def test_extend_end(self):
+        self.assertEqual(extend_end([
+            Segment(5.0, 6.0), Segment(100.0, 120.0), Segment(130.0, -1)
+
+        ]), [
+            Segment(5.0, 11.0), Segment(100, 125.0), Segment(130.0, -1)
+        ])
+
+    def test_overlap(self):
+        self.assertEqual(extend_end([
+            Segment(5.0, 96.0), Segment(100.0, 120.0), Segment(130.0, -1),
+        ]), [
+            Segment(5.0, 125.0), Segment(130.0, -1),
+        ])
