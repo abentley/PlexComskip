@@ -106,7 +106,7 @@ def main():
         sys.exit(1)
 
     config = configparser.ConfigParser({
-        'comskip-ini-path': str(script_dir  / 'comskip.ini'),
+        'comskip-ini-path': str(script_dir / 'comskip.ini'),
         'temp-root': tempfile.gettempdir(), 'nice-level': '0'
     })
     config.read(config_file_path)
@@ -333,7 +333,7 @@ def remove_commercials(temp_dir, input_video, edl_file):
         The path to the output video file without commercials.
     """
     logging.info('Using EDL: %s', edl_file)
-    target_path = temp_dir / input_video.with_suffix('.spliced.mkv').name 
+    target_path = temp_dir / input_video.with_suffix('.spliced.mkv').name
     try:
         segments = list_segments(edl_file)
         segments = extend_end(segments)
@@ -446,7 +446,9 @@ Segment = namedtuple('Segment', ['start', 'end'])
 
 
 def extend_end(segments, amount=5.0):
-    extended = [Segment(s.start, s.end + amount) if s.end > 0 else s for s in segments]
+    extended = [
+        Segment(s.start, s.end + amount) if s.end > 0 else s for s in segments
+    ]
     extended2 = []
     cur = None
     for segment in extended:
