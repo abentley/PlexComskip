@@ -67,7 +67,7 @@ def cleanup_and_exit(temp_dir, keep_temp=False):
 
     # Exit cleanly.
     logging.info('Done processing!')
-    sys.exit(0)
+    # sys.exit(0)
 
 
 @contextlib.contextmanager
@@ -333,7 +333,7 @@ def remove_commercials(temp_dir, input_video, edl_file):
         The path to the output video file without commercials.
     """
     logging.info('Using EDL: %s', edl_file)
-    target_path = temp_dir / input_video.with_suffix('.spliced.mkv').name
+    target_path = temp_dir / input_video.with_suffix('.spliced.ts').name
     try:
         segments = list_segments(edl_file)
         segments = extend_end(segments)
@@ -347,15 +347,19 @@ def remove_commercials(temp_dir, input_video, edl_file):
     logging.info('Going to concatenate %s files from the segment list.' %
                  len(segment_files))
     try:
-        cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i',
-                           segment_list_file_path, '-c', 'copy', target_path]
-        logging.info('[ffmpeg] Command: %s' % cmd)
-        subprocess.check_call(cmd)
-        return target_path
-
+        ffmpeg_concat(segment_list_file_path, target_path)
     except Exception as e:
         logging.error('Something went wrong during concatenation: %s' % e)
         raise
+
+    return target_path
+
+
+def ffmpeg_concat(segment_list_file_path, target_path):
+    cmd = NICE_ARGS + [FFMPEG_PATH, '-y', '-f', 'concat', '-i',
+                       segment_list_file_path, '-c', 'copy', target_path]
+    logging.info('[ffmpeg] Command: %s' % cmd)
+    subprocess.check_call(cmd)
 
 
 def call_and_retry(cmd, retries=2):
@@ -395,7 +399,7 @@ def detect_commercials(temp_dir, temp_video_path):
 
 def replace_original(input_video, output_video):
     """
-    Replaces the original video file with the processed output video.
+    Determine whether to replace the output with the input.
 
     Checks whether the new files is meaningfully smaller than the original.
     Ensures that the new file is not less than half the size of the original.
@@ -512,9 +516,9 @@ def do_work(session_uuid, temp_dir):
     output_video = remove_commercials(temp_dir, temp_video_path, edl_file)
     if replace_original(video_path, output_video):
         try:
-            target = original_video_dir / output_video.basename
+            target = video_path.with_suffix(output_video.suffixes[-1])
             logging.info('Copying the output file into place: %s -> %s' %
-                         target)
+                         (output_video, target))
             shutil.copy(output_video, target)
             if not target.samefile(video_path):
                 video_path.unlink()

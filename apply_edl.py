@@ -24,7 +24,7 @@ def main():
     edl = args.edl.resolve()
     with TemporaryDirectory() as temp_dir:
         os.chdir(temp_dir)
-        output_video = remove_commercials(temp_dir, video, edl, video.name)
+        output_video = remove_commercials(Path(temp_dir), video, edl)
         shutil.move(output_video, output)
 
 
